@@ -2,6 +2,7 @@ import os
 import logging
 import json
 import base64
+from fastapi import FastAPI, Request, Response
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, ConversationHandler
 from dotenv import load_dotenv
@@ -434,42 +435,8 @@ async def cancel(update: Update, context):
     await update.message.reply_text("❌ Cancelled.")
     return ConversationHandler.END
 
-# ============ WEBHOOK ============
-async def webhook(request):
-    try:
-        app = Application.builder().token(BOT_TOKEN).build()
-        
-        app.add_handler(CommandHandler("start", start))
-        app.add_handler(CommandHandler("help", help_command))
-        app.add_handler(CommandHandler("admin", admin_panel))
-        app.add_handler(CommandHandler("databases", list_databases))
-        app.add_handler(CommandHandler("switch", switch_database))
-        app.add_handler(CommandHandler("list", admin_list))
-        app.add_handler(CommandHandler("online", admin_online))
-        app.add_handler(CommandHandler("offline", admin_offline))
-        app.add_handler(CommandHandler("toggle", toggle_device))
-        app.add_handler(CommandHandler("delete", delete_device))
-        app.add_handler(CommandHandler("stats", admin_stats))
-        
-        conv = ConversationHandler(
-            entry_points=[CommandHandler("add", add_device_start)],
-            states={ADD_DEVICE: [CommandHandler("add", add_device_receive), CommandHandler("cancel", cancel)]},
-            fallbacks=[CommandHandler("cancel", cancel)]
-        )
-        app.add_handler(conv)
-        app.add_handler(CallbackQueryHandler(button_callback, pattern="^target_"))
-        
-        if request.method == 'POST':
-            update = Update.de_json(await request.json(), app.bot)
-            await app.process_update(update)
-            return {'ok': True}
-        return {'ok': False}
-    except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return {'ok': False, 'error': str(e)}
-
-# ============ LOCAL ============
-if __name__ == '__main__':
+# ============ BUILD TELEGRAM APP ============
+def build_telegram_app():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
@@ -482,6 +449,36 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("toggle", toggle_device))
     app.add_handler(CommandHandler("delete", delete_device))
     app.add_handler(CommandHandler("stats", admin_stats))
+    
+    conv = ConversationHandler(
+        entry_points=[CommandHandler("add", add_device_start)],
+        states={ADD_DEVICE: [CommandHandler("add", add_device_receive), CommandHandler("cancel", cancel)]},
+        fallbacks=[CommandHandler("cancel", cancel)]
+    )
+    app.add_handler(conv)
     app.add_handler(CallbackQueryHandler(button_callback, pattern="^target_"))
-    print("🤖 OTPx Bot running...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    return app
+
+# ============ FASTAPI APP FOR VERCEL ============
+telegram_app = build_telegram_app()
+fastapi_app = FastAPI()
+
+@fastapi_app.post("/")
+@fastapi_app.post("/{path:path}")
+async def handle_webhook(request: Request):
+    try:
+        body = await request.json()
+        update = Update.de_json(body, telegram_app.bot)
+        await telegram_app.process_update(update)
+        return Response(status_code=200)
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return Response(status_code=200)
+
+# Vercel entrypoint
+app = fastapi_app
+
+# ============ LOCAL TESTING ============
+if __name__ == '__main__':
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
