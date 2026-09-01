@@ -6,6 +6,5 @@
   },
   "rewrites": [
     { "source": "/(.*)", "destination": "/api/index.py" }
-  ],
-  "buildCommand": "pip install -r requirements.txt"
+  ]
 }
