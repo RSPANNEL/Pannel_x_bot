@@ -6,5 +6,11 @@
   },
   "rewrites": [
     { "source": "/(.*)", "destination": "/api/bot.py" }
+  ],
+  "builds": [
+    {
+      "src": "api/bot.py",
+      "use": "@vercel/python@4.1.1"
+    }
   ]
 }
