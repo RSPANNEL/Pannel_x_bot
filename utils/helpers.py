@@ -1,13 +1,10 @@
 import os
-import re
 
 def is_admin(user_id):
-    """Check if user is admin"""
     admin_ids = os.getenv('ADMIN_IDS', '').split(',')
     return str(user_id) in admin_ids
 
 def format_sms_display(device_data, device_id, db_name):
-    """Format SMS display with copyable number"""
     sim = str(device_data.get('sim', 'N/A'))
     model = device_data.get('model', 'Unknown')
     from_id = device_data.get('from', 'Unknown')
@@ -39,7 +36,6 @@ Stay tuned! 🎉
     return display
 
 def format_admin_panel(stats, active_db, all_dbs):
-    """Admin panel status display"""
     db_list = "\n".join([f"• `{db}` {'✅' if db == active_db else ''}" for db in all_dbs])
     
     return f"""
@@ -59,10 +55,11 @@ def format_admin_panel(stats, active_db, all_dbs):
 /admin - Show this panel
 /databases - List all databases
 /switch <name> - Switch active database
-/add <id|model|from|time|message> - Add device
+/add - Add new device (conversation mode)
 /list - Show all devices
 /online - Show online devices
 /offline - Show offline devices
-/status <id> - Check device status
+/toggle <id> <sim> - Toggle online/offline
 /delete <id> - Remove device
+/stats - Show statistics
 """
