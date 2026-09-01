@@ -230,8 +230,8 @@ def get_telegram_app():
 
 
 # ============ WEBHOOK ENDPOINT ============
-@app.post("/api/index")
-@app.post("/api/index/{path:path}")
+@app.post("/")
+@app.post("/{path:path}")
 async def handle_webhook(request: Request):
     try:
         telegram_app = get_telegram_app()
@@ -246,7 +246,7 @@ async def handle_webhook(request: Request):
         return Response(status_code=200)
 
 
-@app.get("/api/index")
+@app.get("/")
 async def health():
     return {"status": "ok"}
 
