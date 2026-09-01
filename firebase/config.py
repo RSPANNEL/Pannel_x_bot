@@ -5,12 +5,10 @@ import json
 import base64
 from typing import Dict, Optional
 
-# Store all initialized Firebase apps
 _firebase_apps = {}
 _active_db_name = None
 
 def init_firebase_database(db_name: str, db_url: str, cred_base64: str) -> firebase_admin.App:
-    """Initialize a Firebase database instance"""
     try:
         if db_name in _firebase_apps:
             return _firebase_apps[db_name]
@@ -30,20 +28,17 @@ def init_firebase_database(db_name: str, db_url: str, cred_base64: str) -> fireb
         return None
 
 def get_active_database() -> str:
-    """Get currently active database name"""
     global _active_db_name
     if not _active_db_name:
         _active_db_name = os.getenv('ACTIVE_DATABASE', 'myapp')
     return _active_db_name
 
 def set_active_database(db_name: str):
-    """Set active database (admin only)"""
     global _active_db_name
     _active_db_name = db_name
     return True
 
 def get_all_databases() -> Dict[str, Dict]:
-    """Get all configured Firebase databases"""
     databases = {}
     for key, value in os.environ.items():
         if key.startswith('FIREBASE_DB_') and key.endswith('_NAME'):
@@ -52,14 +47,14 @@ def get_all_databases() -> Dict[str, Dict]:
             url_key = f'FIREBASE_DB_{index}_URL'
             cred_key = f'FIREBASE_DB_{index}_CRED'
             if url_key in os.environ and cred_key in os.environ:
-                databases[name] = {
-                    'url': os.environ[url_key],
-                    'cred': os.environ[cred_key]
-                }
+                if os.environ[cred_key] and os.environ[cred_key] != 'PASTE_BASE64_CRED_' + index:
+                    databases[name] = {
+                        'url': os.environ[url_key],
+                        'cred': os.environ[cred_key]
+                    }
     return databases
 
 def get_devices_from_db(db_name: Optional[str] = None) -> Dict:
-    """Get devices from specified database or active one"""
     if not db_name:
         db_name = get_active_database()
     
@@ -71,11 +66,13 @@ def get_devices_from_db(db_name: Optional[str] = None) -> Dict:
     if not app:
         return {}
     
-    ref = db.reference('devices', app=app)
-    return ref.get() or {}
+    try:
+        ref = db.reference('devices', app=app)
+        return ref.get() or {}
+    except:
+        return {}
 
 def get_device_by_id_from_db(device_id: str, db_name: Optional[str] = None) -> Optional[Dict]:
-    """Get single device from specified database"""
     if not db_name:
         db_name = get_active_database()
     
@@ -87,11 +84,13 @@ def get_device_by_id_from_db(device_id: str, db_name: Optional[str] = None) -> O
     if not app:
         return None
     
-    ref = db.reference(f'devices/{device_id}', app=app)
-    return ref.get()
+    try:
+        ref = db.reference(f'devices/{device_id}', app=app)
+        return ref.get()
+    except:
+        return None
 
 def add_device_to_db(device_id: str, device_data: Dict, db_name: Optional[str] = None) -> bool:
-    """Add device to specified database"""
     if not db_name:
         db_name = get_active_database()
     
@@ -103,12 +102,14 @@ def add_device_to_db(device_id: str, device_data: Dict, db_name: Optional[str] =
     if not app:
         return False
     
-    ref = db.reference(f'devices/{device_id}', app=app)
-    ref.set(device_data)
-    return True
+    try:
+        ref = db.reference(f'devices/{device_id}', app=app)
+        ref.set(device_data)
+        return True
+    except:
+        return False
 
 def delete_device_from_db(device_id: str, db_name: Optional[str] = None) -> bool:
-    """Delete device from specified database"""
     if not db_name:
         db_name = get_active_database()
     
@@ -120,12 +121,14 @@ def delete_device_from_db(device_id: str, db_name: Optional[str] = None) -> bool
     if not app:
         return False
     
-    ref = db.reference(f'devices/{device_id}', app=app)
-    ref.delete()
-    return True
+    try:
+        ref = db.reference(f'devices/{device_id}', app=app)
+        ref.delete()
+        return True
+    except:
+        return False
 
 def get_online_devices_from_db(db_name: Optional[str] = None) -> Dict:
-    """Get only devices with SIM from specified database"""
     devices = get_devices_from_db(db_name)
     online = {}
     for device_id, data in devices.items():
@@ -134,7 +137,6 @@ def get_online_devices_from_db(db_name: Optional[str] = None) -> Dict:
     return online
 
 def get_offline_devices_from_db(db_name: Optional[str] = None) -> Dict:
-    """Get devices without SIM from specified database"""
     devices = get_devices_from_db(db_name)
     offline = {}
     for device_id, data in devices.items():
@@ -143,7 +145,6 @@ def get_offline_devices_from_db(db_name: Optional[str] = None) -> Dict:
     return offline
 
 def get_device_count_from_db(db_name: Optional[str] = None) -> Dict:
-    """Get total, online, offline counts from specified database"""
     all_devices = get_devices_from_db(db_name)
     total = len(all_devices)
     online = 0
@@ -155,8 +156,4 @@ def get_device_count_from_db(db_name: Optional[str] = None) -> Dict:
         else:
             offline += 1
     
-    return {
-        'total': total,
-        'online': online,
-        'offline': offline
-    }
+    return {'total': total, 'online': online, 'offline': offline}
